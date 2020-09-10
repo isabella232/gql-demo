@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graphql-config
+  namespace: default
+
+data:
+  PLAYGROUND: "1"
+  POSTGRES_USER: "readonly-user@pgdemoserver"
+  POSTGRES_HOST: "12.34.56.78"
+  POSTGRES_DB: "demodb"
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSL: "true"
+  POSTGRES_SCHEMA: "v13"
+  POSTGRES_POOLING: "True"
+  POSTGRES_MIN_POOLING_SIZE: "2"
+  MAX_POOLING_SIZE: "10"
+  APPLICATION_NAME: "demo-graphql"
+  prometheus_push_gateway: http://ignoble-waterbuffalo-prometheus-pushgateway.monitoring.svc.cluster.local:9091/metrics/job/
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: demo-graphql
+  namespace: default
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 50%
+  revisionHistoryLimit: 5
+  template:
+    metadata:
+      labels:
+        app: demo-graphql-app #deployment label
+        track: development
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: demo-graphql-app
+          imagePullPolicy: Always
+          image: "<IMAGE>" #ci/cd would sed out the correct image tag
+          ports:
+            - name: ql
+              containerPort: 4001
+          resources:
+            limits:
+              cpu: 200m
+              memory: "400Mi"
+          env:
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mvpdemo-read
+                  key: password
+            - name: JWT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: demo-jwt-key
+                  key: password
+            - name: NODE_ENV
+              value: production
+            - name: PLAYGROUND
+              valueFrom:
+                configMapKeyRef:
+                  # The ConfigMap containing the value you want to assign to SPECIAL_LEVEL_KEY
+                  name: graphql-config
+                  # Specify the key associated with the value
+                  key: PLAYGROUND
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_HOST
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_SCHEMA
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_SCHEMA
+            - name: POSTGRES_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_PORT
+            - name: POSTGRES_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_SSL
+            - name: APPLICATION_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: APPLICATION_NAME
+            - name: POSTGRES_POOLING
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_POOLING
+            - name: POSTGRES_MIN_POOLING_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: POSTGRES_MIN_POOLING_SIZE
+            - name: MAX_POOLING_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: graphql-config
+                  key: MAX_POOLING_SIZE
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: demo-graphql-app-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    certmanager.k8s.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  tls:
+    - hosts:
+        - demo-graphql.demo-example.com
+      secretName: demo-example-secret
+  rules:
+    - host: demo-graphql.demo-example.com
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: demo-graphql
+              servicePort: 4001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-graphql
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-graphql-app
+    track: development
+  ports:
+    - name: ql
+      port: 4001
+      protocol: TCP
+      targetPort: 4001
+  sessionAffinity: None
+---
+apiVersion: autoscaling/v2beta1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-graphql
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-graphql
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: memory
+        targetAverageUtilization: 90
+    - type: Resource
+      resource:
+        name: cpu
+        targetAverageUtilization: 90

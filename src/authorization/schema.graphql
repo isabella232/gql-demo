@@ -1,0 +1,11 @@
+type AuthToken {
+  token: String!
+}
+
+type UserContext {
+  type: String
+  subject: String
+  expiresAt: String
+  createdAt: String
+  expiresInMs: Int
+}

@@ -1,0 +1,15 @@
+# import AuthToken from "../auth/schema.graphql"
+# import UserContext from "../auth/schema.graphql"
+
+type Mutation {
+  generateUserAuthToken(authTokenRequest: AuthTokenRequest!): AuthToken!
+}
+
+type Query {
+}
+
+type GuidResult {
+  guid: String
+}
+
+scalar UtcDate

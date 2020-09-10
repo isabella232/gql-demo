@@ -1,0 +1,6 @@
+type Book {
+  bookId: Int
+  bookTitle: String
+  bookAuthor: String
+  inStock: Boolean
+}
